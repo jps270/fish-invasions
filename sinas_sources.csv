@@ -1,0 +1,110 @@
+keep,datasetName
+0,Ants_Wong
+1,IUCN_Amph
+0,BirdLife
+1,IUCN_Mamm
+1,IUCN_Rep
+0,WCVP
+0,WoRMS
+1,GIATAR
+1,GRIIS
+0,Ants_Wong; FirstRecords
+1,FirstRecords; GAVIA
+1,GAVIA
+0,BirdLife; GIATAR
+1,GIATAR; IUCN_Mamm
+1,FishBase; GRIIS
+1,FishBase
+1,FirstRecords; FishBase; GRIIS
+0,GIATAR; WCVP
+0,GloNAF
+1,GIATAR; GRIIS
+0,GloNAF; GRIIS
+0,GIATAR; GloNAF; GRIIS
+0,DAMA
+1,FirstRecords
+1,AmphRep; FirstRecords
+0,DAMA; FirstRecords
+0,MacroFungi
+0,FirstRecords; GloNAF
+0,GloNAF; WoRMS
+1,FirstRecords; GIATAR; GRIIS
+1,FirstRecords; GRIIS
+1,FirstRecords; GIATAR
+0,FirstRecords; GAVIA; GRIIS
+0,DAMA; GRIIS
+1,AmphRep
+1,FirstRecords; FishBase
+1,FishBase; GIATAR
+0,FirstRecords; GloNAF; GRIIS
+0,FirstRecords; GIATAR; GloNAF; GRIIS
+0,GIATAR; GloNAF
+0,FirstRecords; GIATAR; GloNAF
+0,FirstRecords; GloNAF; GRIIS; GloNAF; GRIIS
+1,Ants_Wong; FirstRecords; GRIIS
+0,GAVIA; GRIIS
+0,GIATAR; GloNAF; GRIIS; GloNAF
+0,GRIIS; MacroFungi
+0,Ants_Wong; GRIIS
+1,AmphRep; FirstRecords; GIATAR
+1,AmphRep; FirstRecords; GRIIS
+0,DAMA; FirstRecords; GRIIS
+1,AmphRep; GRIIS
+0,Ants_Wong; GIATAR
+0,Ants_Wong; FirstRecords; GIATAR; GRIIS
+0,FirstRecords; WoRMS
+0,FirstRecords; GloNAF; GRIIS; GloNAF
+0,GloNAF; GRIIS; WoRMS
+0,Ants_Wong; FirstRecords; GIATAR
+0,GRIIS; WoRMS
+0,DAMA; GIATAR; GRIIS
+1,FirstRecords; FishBase; GRIIS; WoRMS
+0,FirstRecords; GRIIS; WoRMS
+0,FirstRecords; MacroFungi
+0,FirstRecords; GloNAF; GRIIS; WoRMS
+0,GloNAF; FirstRecords; GRIIS
+0,FirstRecords; GIATAR; GloNAF; GRIIS; GloNAF
+0,FirstRecords; GIATAR; GloNAF; GRIIS; WoRMS
+0,FirstRecords; GloNAF; WoRMS
+0,FirstRecords; GIATAR; MacroFungi
+0,FirstRecords; GRIIS; GRIIS
+0,FirstRecords; GloNAF; GRIIS; GRIIS
+0,FirstRecords; GloNAF; GloNAF
+0,FirstRecords; GloNAF
+1,AmphRep; GIATAR; GRIIS
+0,WCVP; WoRMS
+1,FishBase; GRIIS; WoRMS
+1,FishBase; WoRMS
+0,GIATAR; MacroFungi
+0,Ants_Wong; GIATAR; GRIIS
+0,GloNAF; GRIIS; GloNAF
+0,MacroFungi; FirstRecords
+0,GloNAF; GloNAF; GRIIS
+0,GIATAR; WCVP; WCVP
+0,FirstRecords; GRIIS; MacroFungi
+0,FirstRecords; GIATAR; GRIIS; MacroFungi
+0,GRIIS; GloNAF
+0,GloNAF; GRIIS; GRIIS
+0,DAMA; GIATAR
+0,FirstRecords; GAVIA; GIATAR; GRIIS
+0,GIATAR; GloNAF; GloNAF
+1,FirstRecords; FishBase; WoRMS
+1,GIATAR; IUCN_Rep
+1,AmphRep; FirstRecords; GIATAR; GRIIS
+0,GloNAF; FirstRecords; GloNAF; GRIIS
+0,FirstRecords; GIATAR; GloNAF; GloNAF; GRIIS
+0,DAMA; FirstRecords; GIATAR; GRIIS
+0,GIATAR; WoRMS
+0,FirstRecords; GloNAF; GRIIS
+0,GloNAF; GRIIS; FirstRecords
+0,GRIIS; FirstRecords; GloNAF; GloNAF
+0,GloNAF; GRIIS; GloNAF; FirstRecords
+0,GIATAR; GloNAF; FirstRecords
+0,FirstRecords; GAVIA; GIATAR
+0,WoRMS; GRIIS
+0,GIATAR; GloNAF; WoRMS
+1,FirstRecords; GRIIS; FishBase
+0,GloNAF; FirstRecords
+0,GIATAR; WCVP; WoRMS
+0,FirstRecords; GloNAF; GloNAF; GRIIS
+0,GloNAF; FirstRecords; GloNAF
