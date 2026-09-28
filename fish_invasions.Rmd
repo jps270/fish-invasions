@@ -336,7 +336,6 @@ Reduce cas_ot to just the basins that coincide with food webs.
 
 ```{r}
 cas_ot_fw <- merge(fw_liuyong,cas_ot,by.x="basin",by.y="X1.Basin.Name",all.x=T)
-write.csv(cas_ot_fw,"FW_species_richness_nat_exotic_Sinas_Tedesco.csv")
 ```
 
 Join cas_ot_fw to f_cols_no_dup which has the SiNAS native vs exotic labels based on country.
@@ -345,6 +344,7 @@ Join cas_ot_fw to f_cols_no_dup which has the SiNAS native vs exotic labels base
 f_cols_no_dup <- f_cols_no_dup[,c(1,19,22:23,27:28)]
 colnames(cas_ot_fw)[16] <- "Taxon"
 cas_ot_fw <- merge(cas_ot_fw, f_cols_no_dup, all.x = T)
+write.csv(cas_ot_fw,"FW_species_richness_nat_exotic_Sinas_Tedesco.csv")
 ```
 
 From the IsoFresh database:
@@ -406,7 +406,7 @@ Join SInAS to IsoFresh by "Scientific_name" and "location" columns.
 ```{r}
 o_sfs <- merge(o_sf, sinas, by = c("Scientific_name","location","locationID"))
 o_sfs <- st_drop_geometry(o_sfs)
-write.csv(o_sfs,"other.csv")
+write.csv(o_sfs,"FW_inverts.csv")
 ```
 
 Save workspace.
