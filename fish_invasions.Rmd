@@ -1,0 +1,416 @@
+---
+title: "Fish invasions, food webs, isotopes"
+author: "JP Schmidt, Krista Capps"
+date: "2026-09-25"
+output: html_document
+---
+
+Load packages.
+
+```{r}
+library(sf)
+library(stringr)
+library(rfishbase)
+library(readr)
+library(readxl)
+library(fastDummies)
+library(dplyr)
+library(tidyr)
+library(rgbif)
+```
+
+All source data are downloaded from the web on first run and cached in data_raw/, so later runs don't download them again. Delete a file in data_raw/ to force a fresh download. The largest file (BasinATLAS, ~2.5 GB) can take a while.
+
+```{r}
+data_dir <- "data_raw"
+dir.create(data_dir, showWarnings = FALSE)
+options(timeout = 3600) # allow long downloads
+
+# download url to data_raw/file unless it is already there; return the local path
+fetch <- function(url, file) {
+  dest <- file.path(data_dir, file)
+  if (!file.exists(dest)) download.file(url, dest, mode = "wb")
+  dest
+}
+```
+
+From the IsoFresh database:
+Boulêtreau, S., Vagnon, C., Comte, L., Sagouis, A., Pool, T., Stiling, R.R., Harrod, C., South, J., McIntosh, A.R., Perga, M.E. and Sánchez-Hernández, J., 2025. IsoFresh: A global stable isotope database of freshwater food webs. Knowledge & Management of Aquatic Ecosystems, (426), p.15. https://www.kmae-journal.org/articles/kmae/full_html/2025/01/kmae250024/kmae250024.html
+
+Data: https://zenodo.org/records/14982323. The files are semicolon-delimited.
+
+```{r}
+isofresh_url <- "https://zenodo.org/api/records/14982323/files/"
+read_isofresh <- function(name) {
+  path <- fetch(paste0(isofresh_url, name, "/content"), name)
+  read.csv(path, sep = ";", fileEncoding = "UTF-8-BOM")
+}
+```
+
+Bring in fish species with isotopic data from this database.
+
+```{r}
+fish <- read_isofresh("IsoFresh_Isotope_Fish.csv")
+```
+
+Bring in ecosystem data from the same database which includes coordinates. The Zenodo version already includes the coordinates for ID_0877 (041_Rémarde) that were missing earlier.
+
+```{r}
+eco <- read_isofresh("IsoFresh_Ecosystem.csv")
+eco <- eco[which(!is.na(eco$Longitude)),]
+```
+
+Join fish observations to ecosystem and point location using FoodWeb_ID as the join field.
+
+```{r}
+fish_eco <- merge(fish, eco, by = "FoodWeb_ID", all.x = TRUE)
+```
+
+Convert fish_eco to an sf object.
+
+```{r}
+f_sf <- st_as_sf(fish_eco, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
+```
+
+From SInAS database:
+Gómez-Suárez, M., Laeseke, P. & Seebens, H. A global dataset of native and alien distributions of alien species. Sci Data 12, 1914 (2025). https://doi.org/10.1038/s41597-025-06379-6
+
+Data: SInAS 3.1.1 + geopackage, https://zenodo.org/records/18220953
+
+Get region polygons, which are mostly countries, but at least one body of water.
+
+```{r}
+sinas_url <- "https://zenodo.org/api/records/18220953/files/"
+gpkg_zip <- fetch(paste0(sinas_url, "SInAS_locations_3.1.gpkg.zip/content"), "SInAS_locations_3.1.gpkg.zip")
+gpkg <- list.files(data_dir, pattern = "^SInAS_locations.*\\.gpkg$", recursive = TRUE, full.names = TRUE)
+if (length(gpkg) == 0) {
+  unzip(gpkg_zip, exdir = data_dir)
+  gpkg <- list.files(data_dir, pattern = "^SInAS_locations.*\\.gpkg$", recursive = TRUE, full.names = TRUE)
+}
+gpkg <- gpkg[1]
+
+# List all layers
+st_layers(gpkg)
+
+# Read a specific layer
+gdf <- st_read(gpkg, layer = "AllLocations")
+gdf <- st_make_valid(gdf)
+```
+
+Do spatial join to get country for each of the IsoFresh locations, copy f_sf column Scientific_name to a column called "Taxon", and drop geometry.
+
+```{r}
+f_sf <- st_join(f_sf, gdf, join = st_nearest_feature)
+f_db <- st_drop_geometry(f_sf)
+f_db$Taxon <- f_db$Scientific_name
+colnames(f_db)[23] <- "Location"
+```
+
+GFID (fish only) (https://jalter.diasjp.net/data/ERDP-2025-06 ; https://esj-journals.onlinelibrary.wiley.com/doi/full/10.1111/1440-1703.70016#)
+
+Data: https://github.com/IsmaSA/GFID (sheet "Overall_data" of GFID.xlsx)
+
+From GFID extract: native_region, First_record for each fish species
+
+```{r}
+gfid_xlsx <- fetch("https://raw.githubusercontent.com/IsmaSA/GFID/master/GFID.xlsx", "GFID.xlsx")
+gfid <- as.data.frame(read_excel(gfid_xlsx, sheet = "Overall_data"))
+```
+
+Bring in SInAS data on native vs introduced to join to points. The SInAS csv is space-delimited with quoted fields. Also fix labels so that there is only one "uncertain". Also drop not freshwater fish sources to limit to same (sinas_sources.csv is our own list of which SInAS datasets to keep).
+
+```{r}
+sinas_csv <- fetch(paste0(sinas_url, "SInAS_3.1.1.csv/content"), "SInAS_3.1.1.csv")
+sinas <- read.table(sinas_csv, header = TRUE, sep = " ", quote = "\"", comment.char = "",
+                    fileEncoding = "UTF-8", na.strings = c("", "NA"))
+keep <- read.csv("sinas_sources.csv")
+
+sinas <- merge(sinas, keep, by = "datasetName")
+sinas <- subset(sinas, keep == 1)
+sinas$keep <- NULL
+
+colnames(sinas)[4] <- "Scientific_name" # to match IsoFresh species column
+sinas$establishmentMeans[sinas$establishmentMeans %in% c("introduced; uncertain", "uncertain;introduced")] <- "uncertain"
+```
+
+Drop infraspecific taxa and extra spaces from SInAS data. Also drop taxa with only genus and no species.
+
+```{r}
+sinas <- sinas %>%
+  mutate(
+    Scientific_name = str_squish(Scientific_name),
+    Scientific_name = word(Scientific_name, 1, 2)
+  ) %>%
+  filter(
+    !str_detect(Scientific_name, "\\bsp\\.?$|\\bspp\\.?$"),   # drop "Genus sp." / "Genus spp."
+    str_detect(Scientific_name, "^\\S+\\s+\\S+$")               # keep only two-word names (drop genus-only)
+  )
+```
+
+Harmonize taxonomic names using GBIF.
+
+```{r}
+# get unique taxon names from each dataset
+sinas_names <- unique(sinas$Scientific_name)
+isofresh_names <- unique(fish$Scientific_name)
+
+# query GBIF backbone for each — name_backbone_checklist handles a vector at once
+sinas_resolved <- name_backbone_checklist(sinas_names)
+isofresh_resolved <- name_backbone_checklist(isofresh_names)
+```
+
+Join SInAS to IsoFresh by "Scientific_name" and "location" columns.
+
+```{r}
+f_sfs <- merge(f_sf, sinas, by = c("Scientific_name","location","locationID"))
+```
+
+Join f_sfs to gfid.
+
+```{r}
+f_dbs <- st_drop_geometry(f_sfs)
+f_dbs$Taxon <- f_dbs$Scientific_name
+colnames(f_dbs)[2] <- "Location"
+f_dbs <- merge(f_dbs, gfid, by = c("Taxon","Location","Family"))
+f_dbs$Scientific_name <- NULL
+```
+
+Make dummy variable from EstablishmentMeans and remove duplicate rows for the same species/locations with multiple designations for native vs intoduced.
+
+```{r}
+f_dbsd <- f_dbs %>%
+   dummy_cols(select_columns = "establishmentMeans", remove_selected_columns = TRUE)
+```
+
+Get unique Taxon, FoodWeb_Id and establishmentMeans_introduced and establishmentMeans_native
+
+```{r}
+f_agg <- f_dbsd %>%
+   group_by(Taxon,FoodWeb_ID) %>%
+   summarise(
+    across(c(establishmentMeans_introduced, establishmentMeans_native), max, na.rm = T)
+   )
+```
+
+Get unique f_dbsd without establishment dummy columns.
+
+```{r}
+f_cols <- unique(f_dbsd[,c(1:31,41)])
+```
+
+Join f_agg to f_cols, keeping all fcols.
+
+```{r}
+f_cols <- merge(f_cols, f_agg, by = c("Taxon","FoodWeb_ID"), all.x = T)
+write.csv(f_cols, "fish_fw_inv.csv")
+```
+
+Create a version without duplicate rows.
+
+```{r}
+f_cols_no_dup <- unique(f_cols[,c(1:23,25,27,32:34)])
+write.csv(f_cols_no_dup, "fish_fw_inv_no_dup.csv")
+```
+
+Get fish species richness by FoodWeb_ID.
+
+```{r}
+f_cols_no_dup$species_richness <- rep(1, nrow(f_cols_no_dup))
+fw_sp_richness <- aggregate(species_richness~FoodWeb_ID,data=f_cols_no_dup,sum)
+write.csv(fw_sp_richness, "foodweb_species_richness.csv")
+```
+
+From GIATAR, https://www.nature.com/articles/s41597-024-03824-w extract species optimum temperatures from the CABI water tolerances table.
+
+Data: https://zenodo.org/records/15042321 (query functions: https://github.com/ncsu-landscape-dynamics/GIATAR-dataset)
+
+```{r}
+giatar_zip <- fetch("https://zenodo.org/api/records/15042321/files/GIATAR.zip/content", "GIATAR.zip")
+giatar_files <- c("dataset/species lists/invasive_all_source.csv",
+                  "dataset/CABI data/CABI_tables/towaterTolerances.csv")
+giatar_dir <- file.path(data_dir, "GIATAR")
+if (!all(file.exists(file.path(giatar_dir, giatar_files)))) unzip(giatar_zip, files = giatar_files, exdir = giatar_dir)
+
+sp <- as.data.frame(unique(f_cols_no_dup$Taxon))
+colnames(sp)[1] <- "Taxon"
+
+inv <- read_csv(file.path(giatar_dir, giatar_files[1]), col_types = cols(usageKey = col_character()))
+
+inv <-as.data.frame(inv)
+
+sp1 <- merge(sp, inv, by.x = "Taxon", by.y = "taxonCABI")
+sp1 <- sp1[,c(1,3)]
+sp2 <- merge(sp, inv, by.x = "Taxon", by.y = "canonicalName")
+sp2 <- sp2[,c(1,4)]
+sp3 <- merge(sp, inv, by.x = "Taxon", by.y = "taxonSINAS")
+sp3 <- sp3[,c(1,4)]
+
+sp <- rbind(sp1,sp2,sp3)
+
+sp <- unique(sp)
+
+watertol <- read_csv(file.path(giatar_dir, giatar_files[2]), col_types = cols(usageKey = col_character()))
+watertol <- as.data.frame(watertol)
+watertemp <- subset(watertol, Parameter == "Water temperature (ºC temperature)")
+
+water_temp <- merge(sp, watertol, by = "usageKey", all.x = T)
+write.csv(water_temp,"species_water_temp.csv")
+```
+
+Bring in Hydrobasins and extract values to points.
+
+Linke, S. et al. Global hydro-environmental sub-basin and river reach characteristics at high spatial resolution. Sci. Data 6, 283 (2019). Data: https://www.hydrosheds.org/hydroatlas (BasinATLAS geodatabase, ~2.5 GB)
+
+```{r}
+basin_zip <- fetch("https://figshare.com/ndownloader/files/20082137", "BasinATLAS_Data_v10.gdb.zip")
+find_gdb <- function() list.files(data_dir, pattern = "^BasinATLAS.*\\.gdb$", recursive = TRUE, include.dirs = TRUE, full.names = TRUE)
+if (length(find_gdb()) == 0) unzip(basin_zip, exdir = data_dir)
+basin_gdb <- find_gdb()[1]
+lev12 <- grep("lev12$", st_layers(basin_gdb)$name, value = TRUE)
+
+basins <- st_read(basin_gdb, layer = lev12)
+basins <- st_make_valid(basins)
+f_sfx <- unique(f_sf[,c(1,23,24)])
+f_sfx <- st_join(f_sfx, basins, join = st_nearest_feature)
+f_sfx <- st_drop_geometry(f_sfx)
+write.csv(f_sfx, "fw_hydrobasins.csv")
+```
+
+Tedesco, P. A. et al. A global database on freshwater fish species occurrence in drainage basins. Sci. Data 4, 1–6 (2017). Data: https://doi.org/10.6084/m9.figshare.c.3739145.v1
+
+Liuyong, D. (2026). A global geospatial dataset of freshwater fish species at the drainage-basin scale (updated to December 2024) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.19511163
+
+Bring in Liuyong basins.
+
+```{r}
+liuyong_url <- "https://zenodo.org/api/records/19511163/files/"
+for (ext in c("shp", "shx", "dbf", "prj")) {
+  f <- paste0("Basin_202412_3364.", ext)
+  fetch(paste0(liuyong_url, f, "/content"), f)
+}
+basins2 <- st_read(file.path(data_dir, "Basin_202412_3364.shp"))
+basins2 <- st_make_valid(basins2)
+```
+
+Bring in Liuyong/Tedesco occurrence data. The Liuyong species list comes as xlsx; keep the columns used here and give them the Tedesco column names. The Tedesco Occurrence_Table is semicolon-delimited and uses "." instead of a space in species names.
+
+```{r}
+cas_xlsx <- fetch(paste0(liuyong_url, "cas_freshwater_202412.xlsx/content"), "cas_freshwater_202412.xlsx")
+cas <- read_excel(cas_xlsx, sheet = "CAS") %>%
+  transmute(X6.Fishbase.Valid.Species.Name = valid_name, class, order, family, X1.Basin.Name = basin) %>%
+  as.data.frame()
+cas <- separate_longer_delim(cas, cols = X1.Basin.Name, delim = ";")
+
+tedesco_zip <- fetch("https://ndownloader.figshare.com/files/8964583", "Tedesco_2017.zip")
+if (!file.exists(file.path(data_dir, "Occurrence_Table.csv"))) unzip(tedesco_zip, files = "Occurrence_Table.csv", exdir = data_dir)
+ot <- read.csv(file.path(data_dir, "Occurrence_Table.csv"), sep = ";")
+ot$X6.Fishbase.Valid.Species.Name <- gsub(".", " ", ot$X6.Fishbase.Valid.Species.Name, fixed = TRUE)
+
+cas_ot <- merge(cas,ot, by = c("X6.Fishbase.Valid.Species.Name","X1.Basin.Name"),all.x=T)
+write.csv(cas_ot,"cas_ot.csv")
+```
+
+Join food web locations to Liuyong basins.
+
+```{r}
+fw_sf <- st_as_sf(eco, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
+sf_use_s2(FALSE)
+fw_sf <- st_join(fw_sf, basins2, join = st_nearest_feature)
+sf_use_s2(TRUE)
+```
+
+Make table of food webs and Liuyong basins
+
+```{r}
+fw_liuyong <- st_drop_geometry(fw_sf)
+write.csv(fw_liuyong, "fw_liuyong.csv")
+```
+
+Restrict cas_ot$X1.Basin.Name to just the basins in fw_liuyong.
+
+```{r}
+cas_ot <- subset(cas_ot, X1.Basin.Name %in% fw_liuyong$basin)
+```
+
+Reduce cas_ot to just the basins that coincide with food webs.
+
+```{r}
+cas_ot_fw <- merge(fw_liuyong,cas_ot,by.x="basin",by.y="X1.Basin.Name",all.x=T)
+write.csv(cas_ot_fw,"FW_species_richness_nat_exotic_Sinas_Tedesco.csv")
+```
+
+Join cas_ot_fw to f_cols_no_dup which has the SiNAS native vs exotic labels based on country.
+
+```{r}
+f_cols_no_dup <- f_cols_no_dup[,c(1,19,22:23,27:28)]
+colnames(cas_ot_fw)[16] <- "Taxon"
+cas_ot_fw <- merge(cas_ot_fw, f_cols_no_dup, all.x = T)
+```
+
+From the IsoFresh database:
+Boulêtreau, S., Vagnon, C., Comte, L., Sagouis, A., Pool, T., Stiling, R.R., Harrod, C., South, J., McIntosh, A.R., Perga, M.E. and Sánchez-Hernández, J., 2025. IsoFresh: A global stable isotope database of freshwater food webs. Knowledge & Management of Aquatic Ecosystems, (426), p.15. https://www.kmae-journal.org/articles/kmae/full_html/2025/01/kmae250024/kmae250024.html
+
+Bring in other species with isotopic data from this database. Restrict to taxa that are described to species: trim to the first two words (as with SInAS), and drop "Genus sp."-type names, family-level names, and descriptive second words ("adult", "larvae", "and", ...).
+
+```{r}
+stop_words <- c("sp", "spp", "cf", "aff", "adult", "adults", "larva", "larvae",
+                "juvenile", "juveniles", "and", "or", "snail")
+oth <- read_isofresh("IsoFresh_Isotope_Other.csv") %>%
+  mutate(Scientific_name = word(str_squish(Scientific_name), 1, 2)) %>%
+  filter(
+    str_detect(Scientific_name, "^[A-Z][a-z]+ [a-z]+$"),   # "Genus species" only
+    !word(Scientific_name, 2) %in% stop_words,
+    !str_detect(word(Scientific_name, 1), "idae$")          # family names
+  )
+```
+
+Bring in ecosystem data from the same database which includes coordinates.
+
+```{r}
+eco <- read_isofresh("IsoFresh_Ecosystem.csv")
+eco <- eco[which(!is.na(eco$Longitude)),]
+```
+
+Join invert or other observation to ecosystem and point location using FoodWeb_ID as the join field.
+
+```{r}
+oth_eco <- merge(oth, eco, by = "FoodWeb_ID", all.x = TRUE)
+```
+
+Convert fish_eco to an sf object.
+
+```{r}
+o_sf <- st_as_sf(oth_eco, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
+```
+
+Do spatial join to get country for each of the IsoFresh locations, copy f_sf column Scientific_name to a column called "Taxon", and drop geometry.
+
+```{r}
+o_sf <- st_join(o_sf, gdf, join = st_nearest_feature)
+o_db <- st_drop_geometry(o_sf)
+o_db$Taxon <- o_db$Scientific_name
+```
+
+Harmonize taxonomic names using GBIF.
+
+```{r}
+# get unique taxon names
+isofresh_names2 <- unique(oth$Scientific_name)
+
+# query GBIF backbone: name_backbone_checklist handles a vector at once
+isofresh_resolved2 <- name_backbone_checklist(isofresh_names2)
+```
+
+Join SInAS to IsoFresh by "Scientific_name" and "location" columns.
+
+```{r}
+o_sfs <- merge(o_sf, sinas, by = c("Scientific_name","location","locationID"))
+o_sfs <- st_drop_geometry(o_sfs)
+write.csv(o_sfs,"other.csv")
+```
+
+Save workspace.
+
+```{r}
+save.image("fw.Rdata")
+```
