@@ -37,29 +37,61 @@ fetch <- function(url, file) {
 Taxonomic name harmonization. Fish names are updated to the current FishBase valid name: accepted names stay, synonyms map to their valid name, and misapplied/ambiguous names or names FishBase doesn't know (e.g. "Genus sp") are left unchanged. FishBase is used rather than the GBIF backbone because GBIF lags for fish (e.g. it still sinks Psalidodon and Megaleporinus into Astyanax and Leporinus). Non-fish taxa are updated to the GBIF accepted species, only where GBIF matches the name at species level.
 
 ```{r}
-# FishBase valid name for each fish name in x
-fb_valid <- function(x) {
-  lk <- synonyms(unique(na.omit(x))) %>%
+# every adjustment below records its counts here; written to adjustments_summary.csv at the end
+adjustments <- data.frame(step = character(), source = character(), measure = character(), value = numeric())
+log_adj <- function(step, source, measure, value) {
+  adjustments <<- rbind(adjustments, data.frame(step = step, source = source, measure = measure, value = value))
+}
+
+# record how many names and rows a name update changed
+log_names <- function(step, source, old, new) {
+  log_adj(step, source, "unique names checked", length(unique(na.omit(old))))
+  log_adj(step, source, "unique names changed", length(unique(old[which(old != new)])))
+  log_adj(step, source, "rows changed", sum(old != new, na.rm = TRUE))
+}
+
+# record rows removed by de-duplicating after a name update
+log_dups <- function(source, before, after) {
+  log_adj("Duplicates removed after name update", source, "rows removed", before - after)
+}
+
+# FishBase valid name for each fish name in x; pass source to log the changes
+fb_valid <- function(x, source = NULL) {
+  syn <- synonyms(unique(na.omit(x)))
+  lk <- syn %>%
     filter(Status %in% c("accepted name", "provisionally accepted name", "synonym"),
            Species != "To be entered") %>%  # valid names FishBase has no species record for yet (SpecCode 0)
     mutate(accepted = Status != "synonym") %>%
     group_by(synonym) %>%
     filter(if (any(accepted)) accepted else n_distinct(Species) == 1) %>%  # skip synonyms of >1 species
     summarise(Species = first(Species))
-  coalesce(lk$Species[match(x, lk$synonym)], x)
+  out <- coalesce(lk$Species[match(x, lk$synonym)], x)
+  if (!is.null(source)) {
+    step <- "Name update (FishBase)"
+    log_names(step, source, x, out)
+    log_adj(step, source, "names kept: accepted but no FishBase species record yet",
+            length(setdiff(syn$synonym[syn$Species %in% "To be entered"], lk$synonym)))
+    log_adj(step, source, "names kept: not found in FishBase",
+            length(setdiff(unique(na.omit(x)), syn$synonym[!is.na(syn$Status)])))
+  }
+  out
 }
 
 # FishBase family for each (already valid) species name; keep the original family where FishBase has none
-fb_family <- function(species, family) {
+fb_family <- function(species, family, source = NULL) {
   taxa <- load_taxa()
-  coalesce(taxa$Family[match(species, taxa$Species)], family)
+  out <- coalesce(taxa$Family[match(species, taxa$Species)], family)
+  if (!is.null(source)) log_adj("Family update (FishBase)", source, "rows changed", sum(out != family, na.rm = TRUE))
+  out
 }
 
-# GBIF accepted species for each non-fish name in x
-gbif_valid <- function(x) {
+# GBIF accepted species for each non-fish name in x; pass source to log the changes
+gbif_valid <- function(x, source = NULL) {
   res <- name_backbone_checklist(unique(na.omit(x)))
   ok <- res$matchType %in% c("EXACT", "VARIANT", "FUZZY") & res$rank %in% c("SPECIES", "SUBSPECIES") & !is.na(res$species)
-  coalesce(res$species[ok][match(x, res$verbatim_name[ok])], x)
+  out <- coalesce(res$species[ok][match(x, res$verbatim_name[ok])], x)
+  if (!is.null(source)) log_names("Name update (GBIF)", source, x, out)
+  out
 }
 ```
 
@@ -104,8 +136,8 @@ f_sf <- st_as_sf(fish_eco, coords = c("Longitude", "Latitude"), crs = 4326, remo
 Update IsoFresh fish names and families to FishBase.
 
 ```{r}
-f_sf$Scientific_name <- fb_valid(f_sf$Scientific_name)
-f_sf$Family <- fb_family(f_sf$Scientific_name, f_sf$Family)
+f_sf$Scientific_name <- fb_valid(f_sf$Scientific_name, "IsoFresh fish")
+f_sf$Family <- fb_family(f_sf$Scientific_name, f_sf$Family, "IsoFresh fish")
 ```
 
 From SInAS database:
@@ -156,9 +188,11 @@ gfid <- as.data.frame(read_excel(gfid_xlsx, sheet = "Overall_data"))
 Update GFID names and families to FishBase.
 
 ```{r}
-gfid$Taxon <- fb_valid(gfid$Taxon)
-gfid$Family <- fb_family(gfid$Taxon, gfid$Family)
+gfid$Taxon <- fb_valid(gfid$Taxon, "GFID")
+gfid$Family <- fb_family(gfid$Taxon, gfid$Family, "GFID")
+n0 <- nrow(gfid)
 gfid <- distinct(gfid) # synonyms collapsing to one name can create duplicate rows
+log_dups("GFID", n0, nrow(gfid))
 ```
 
 Bring in SInAS data on native vs introduced to join to points. The SInAS csv is space-delimited with quoted fields. Also fix labels so that there is only one "uncertain". Also drop not freshwater fish sources to limit to same (sinas_sources.csv is our own list of which SInAS datasets to keep).
@@ -194,8 +228,10 @@ sinas <- sinas %>%
 Update SInAS names to FishBase.
 
 ```{r}
-sinas$Scientific_name <- fb_valid(sinas$Scientific_name)
+sinas$Scientific_name <- fb_valid(sinas$Scientific_name, "SInAS")
+n0 <- nrow(sinas)
 sinas <- distinct(sinas) # synonyms collapsing to one name can create duplicate rows
+log_dups("SInAS", n0, nrow(sinas))
 ```
 
 Join SInAS to IsoFresh by "Scientific_name" and "location" columns.
@@ -279,7 +315,7 @@ inv <-as.data.frame(inv)
 
 # update GIATAR fish names to FishBase so they match Taxon (GBIF leaves ray-finned fish with no class)
 is_fish <- inv$phylum %in% "Chordata" & inv$class %in% c(NA, "", "Dipneusti", "Elasmobranchii", "Petromyzonti")
-for (col in c("taxonCABI", "canonicalName", "taxonSINAS")) inv[is_fish, col] <- fb_valid(inv[is_fish, col])
+for (col in c("taxonCABI", "canonicalName", "taxonSINAS")) inv[is_fish, col] <- fb_valid(inv[is_fish, col], paste("GIATAR", col))
 
 sp1 <- merge(sp, inv, by.x = "Taxon", by.y = "taxonCABI")
 sp1 <- sp1[,c(1,3)]
@@ -344,10 +380,14 @@ ot <- read.csv(file.path(data_dir, "Occurrence_Table.csv"), sep = ";")
 ot$X6.Fishbase.Valid.Species.Name <- gsub(".", " ", ot$X6.Fishbase.Valid.Species.Name, fixed = TRUE)
 
 # both lists use FishBase valid names as of their release; bring them up to the current FishBase
-cas$X6.Fishbase.Valid.Species.Name <- fb_valid(cas$X6.Fishbase.Valid.Species.Name)
-ot$X6.Fishbase.Valid.Species.Name <- fb_valid(ot$X6.Fishbase.Valid.Species.Name)
+cas$X6.Fishbase.Valid.Species.Name <- fb_valid(cas$X6.Fishbase.Valid.Species.Name, "Liuyong")
+ot$X6.Fishbase.Valid.Species.Name <- fb_valid(ot$X6.Fishbase.Valid.Species.Name, "Tedesco")
+n0 <- nrow(cas)
 cas <- distinct(cas)
+log_dups("Liuyong", n0, nrow(cas))
+n0 <- nrow(ot)
 ot <- distinct(ot)
+log_dups("Tedesco", n0, nrow(ot))
 
 cas_ot <- merge(cas,ot, by = c("X6.Fishbase.Valid.Species.Name","X1.Basin.Name"),all.x=T)
 ```
@@ -380,10 +420,12 @@ Reduce cas_ot to just the basins that coincide with food webs.
 cas_ot_fw <- merge(fw_liuyong,cas_ot,by.x="basin",by.y="X1.Basin.Name",all.x=T)
 ```
 
-Join cas_ot_fw to f_cols_no_dup which has the SiNAS native vs exotic labels based on country.
+Join cas_ot_fw to f_cols_no_dup which has the SiNAS native vs exotic labels based on country. Native/exotic status comes from Tedesco (basin level) first, then SInAS, then FishBase (both country level), then FishBase native records anywhere in the basin ("NativeBasin"), and finally Liuyong's own native-range lists for species FishBase has no record of ("NativeLiuyong").
 
 ```{r}
-f_cols_no_dup <- f_cols_no_dup[,c(1,19,22:23,27:28)]
+# FoodWeb_ID is kept so IsoFresh fish not in the Liuyong basin list keep their food web after the merge
+f_cols_no_dup <- f_cols_no_dup[,c("Taxon","FoodWeb_ID","Country","Longitude","Latitude",
+                                  "establishmentMeans_introduced","establishmentMeans_native")]
 colnames(cas_ot_fw)[16] <- "Taxon"
 cas_ot_fw <- merge(cas_ot_fw, f_cols_no_dup, all = T)
 
@@ -397,7 +439,143 @@ cas_ot_fw$X3.Native.Exotic.Status[no_tedesco & intro & !native] <- "ExoticSinas"
 cas_ot_fw$X3.Native.Exotic.Status[no_tedesco & intro & native] <- "MixedSinas"
 cas_ot_fw$X3.Native.Exotic.Status[no_tedesco & cas_ot_fw$establishmentMeans_introduced %in% 0] <- "NativeSinas"
 
+# where neither Tedesco nor SInAS has a status, fall back to FishBase country records for the
+# food web's country. Only whole-country records (3-digit C_Code) are used, so sub-national
+# areas such as Hawaii don't make a species "mixed" for the whole country.
+need <- is.na(cas_ot_fw$X3.Native.Exotic.Status)
+fb_ctry <- country(unique(cas_ot_fw$Taxon[need])) %>%
+  filter(grepl("^[0-9]{3}$", C_Code)) %>%
+  left_join(select(fb_tbl("countref"), C_Code, ISO3Alpha), by = "C_Code") %>%
+  mutate(st = case_when(Status %in% c("native", "endemic") ~ "native",
+                        Status == "introduced" ~ "introduced")) %>%  # skip questionable, not established, etc.
+  filter(!is.na(st)) %>%
+  group_by(Species, Country_ISO = ISO3Alpha) %>%
+  summarise(fb_status = if (n_distinct(st) > 1) "MixedFishBase" else if (st[1] == "native") "NativeFishBase" else "ExoticFishBase",
+            .groups = "drop")
+fb_st <- fb_ctry$fb_status[match(paste(cas_ot_fw$Taxon, cas_ot_fw$Country_ISO), paste(fb_ctry$Species, fb_ctry$Country_ISO))]
+cas_ot_fw$X3.Native.Exotic.Status[need] <- fb_st[need]
+
+# Remaining blanks, step 1: Liuyong lists species for the whole basin, so a species can be native to
+# another country sharing the basin but absent from the food web's country. Label those "NativeBasin"
+# when FishBase has the species as native in any of the basin's countries.
+fb_country_names <- c("Bosnia and Herzegovina" = "Bosnia Herzego.", "Central African Republic" = "Centr. Af. Rp.",
+                      "Côte d'Ivoire" = "Ivory coast", "Democratic Republic of the Congo" = "Congo (DR;Kin.)",
+                      "México" = "Mexico", "North Korea" = "Korea (North)", "Papua New Guinea" = "Papua New Guin.",
+                      "Republic of the Congo" = "Congo (Brazza.)", "South Korea" = "Korea (South)",
+                      "South Sudan" = "Sudan (South)", "Sudan" = "Sudan (North)", "Svalbard and Jan Mayen" = "Svalbard Mayen",
+                      "Swaziland" = "Eswatini", "Turkey" = "Türkiye", "United Kingdom" = "UK Gr. Britain",
+                      "United States" = "US of America", "Vatican City" = "Holy See", "Vietnam" = "Viet Nam")
+need <- is.na(cas_ot_fw$X3.Native.Exotic.Status)
+basin_ctry <- cas_ot_fw[need, ] %>%
+  distinct(Taxon, country) %>%
+  mutate(fb_country = country) %>%
+  separate_longer_delim(fb_country, ";") %>%
+  mutate(fb_country = coalesce(fb_country_names[fb_country], fb_country))
+fb_native <- country(unique(basin_ctry$Taxon)) %>%
+  filter(Status %in% c("native", "endemic")) %>%
+  distinct(Species, country)
+native_in_basin <- basin_ctry %>%
+  semi_join(fb_native, by = c("Taxon" = "Species", "fb_country" = "country")) %>%
+  distinct(Taxon, country)
+in_basin <- need & paste(cas_ot_fw$Taxon, cas_ot_fw$country) %in% paste(native_in_basin$Taxon, native_in_basin$country)
+cas_ot_fw$X3.Native.Exotic.Status[in_basin] <- "NativeBasin"
+
+# Remaining blanks, step 2: Liuyong species with no FishBase species record (mostly described in the last
+# decade). Liuyong's lists come from Catalog of Fishes distributions, which are native ranges, so label
+# these "NativeLiuyong" (an assumption, kept as its own label so it can be filtered out).
+need <- is.na(cas_ot_fw$X3.Native.Exotic.Status)
+no_fb_record <- need & !is.na(cas_ot_fw$class) & !cas_ot_fw$Taxon %in% load_taxa()$Species
+cas_ot_fw$X3.Native.Exotic.Status[no_fb_record] <- "NativeLiuyong"
+
+log_adj("Food web kept for IsoFresh fish not on the Liuyong basin list", "IsoFresh fish", "rows",
+        sum(is.na(cas_ot_fw$class)))
+
+# One row per food web x species. Duplicates come from Tedesco listing a species in a basin under several
+# source names that now resolve to the same Taxon; their differing values are joined with ";". The status
+# is the highest-priority one in the group, and a species Tedesco lists as both native and exotic in the
+# same basin becomes "MixedTedesco".
+status_order <- c("native", "exotic", "ExoticSinas", "MixedSinas", "NativeSinas",
+                  "NativeFishBase", "ExoticFishBase", "MixedFishBase", "NativeBasin", "NativeLiuyong")
+collapse_status <- function(s) {
+  s <- unique(na.omit(s))
+  if (all(c("native", "exotic") %in% s)) return("MixedTedesco")
+  s[order(match(s, status_order))][1]
+}
+collapse_values <- function(v) {
+  u <- unique(na.omit(v))
+  if (length(u) == 0) NA_character_ else paste(u, collapse = ";")
+}
+n0 <- nrow(cas_ot_fw)
+key <- cas_ot_fw[, c("FoodWeb_ID", "Taxon")]
+dup <- duplicated(key) | duplicated(key, fromLast = TRUE)
+dedup <- cas_ot_fw[dup, ] %>%
+  mutate(across(everything(), as.character)) %>%
+  group_by(FoodWeb_ID, Taxon) %>%
+  summarise(X3.Native.Exotic.Status = collapse_status(X3.Native.Exotic.Status),
+            across(-X3.Native.Exotic.Status, collapse_values), .groups = "drop")
+cas_ot_fw <- bind_rows(mutate(cas_ot_fw[!dup, ], across(everything(), as.character)), dedup) %>%
+  type.convert(as.is = TRUE) %>%           # columns with ";"-joined values stay text
+  select(all_of(names(cas_ot_fw))) %>%
+  arrange(FoodWeb_ID, Taxon)
+log_adj("Duplicate food web x species rows merged", "Combined table", "rows before", n0)
+log_adj("Duplicate food web x species rows merged", "Combined table", "rows after", nrow(cas_ot_fw))
+log_adj("Duplicate food web x species rows merged", "Combined table", "MixedTedesco pairs",
+        sum(cas_ot_fw$X3.Native.Exotic.Status %in% "MixedTedesco"))
+
+# rows, species and food webs per status label
+status_counts <- cas_ot_fw %>%
+  mutate(X3.Native.Exotic.Status = coalesce(X3.Native.Exotic.Status, "(blank)")) %>%
+  group_by(X3.Native.Exotic.Status) %>%
+  summarise(rows = n(), species = n_distinct(Taxon), food_webs = n_distinct(FoodWeb_ID))
+for (i in seq_len(nrow(status_counts))) {
+  for (m in c("rows", "species", "food_webs")) {
+    log_adj("Native/exotic status", status_counts$X3.Native.Exotic.Status[i], gsub("_", " ", m), status_counts[[m]][i])
+  }
+}
+st <- cas_ot_fw$X3.Native.Exotic.Status
+log_adj("Native/exotic status", "All labels", "species with no status in any row",
+        length(setdiff(unique(cas_ot_fw$Taxon[is.na(st)]), unique(cas_ot_fw$Taxon[!is.na(st)]))))
+
 write.csv(cas_ot_fw,"FW_species_richness_nat_exotic_Sinas_Tedesco.csv", row.names = FALSE, na = "")
+```
+
+Species richness per food web, two ways: with all species in the food web's Liuyong basin, and without "NativeBasin" species (native elsewhere in the basin but not recorded in the food web's country). Each species counts once per food web; MixedTedesco, MixedSinas and MixedFishBase count as mixed.
+
+```{r}
+fw_richness <- function(d) {
+  d %>%
+    filter(!is.na(FoodWeb_ID)) %>%
+    mutate(cls = case_when(grepl("^(exotic|Exotic)", X3.Native.Exotic.Status) ~ "exotic",
+                           grepl("^Mixed", X3.Native.Exotic.Status) ~ "mixed",
+                           grepl("^(native|Native)", X3.Native.Exotic.Status) ~ "native",
+                           TRUE ~ "unknown")) %>%
+    group_by(FoodWeb_ID, Taxon) %>%
+    summarise(cls = if (n_distinct(cls) > 1 && all(c("native", "exotic") %in% cls)) "mixed" else first(cls),
+              .groups = "drop") %>%
+    count(FoodWeb_ID, cls) %>%
+    pivot_wider(names_from = cls, values_from = n, values_fill = 0) %>%
+    mutate(total = rowSums(across(any_of(c("native", "exotic", "mixed", "unknown"))))) %>%
+    select(FoodWeb_ID, total, any_of(c("native", "exotic", "mixed", "unknown")))
+}
+
+cas_ot_fw_country <- subset(cas_ot_fw, !X3.Native.Exotic.Status %in% "NativeBasin")
+write.csv(cas_ot_fw_country, "FW_species_richness_nat_exotic_Sinas_Tedesco_no_NativeBasin.csv", row.names = FALSE, na = "")
+
+rich_basin <- fw_richness(cas_ot_fw)
+rich_country <- fw_richness(cas_ot_fw_country)
+write.csv(rich_basin, "FW_richness_basin.csv", row.names = FALSE, na = "")
+write.csv(rich_country, "FW_richness_country.csv", row.names = FALSE, na = "")
+
+log_adj("Richness without NativeBasin species", "Combined table", "rows removed", nrow(cas_ot_fw) - nrow(cas_ot_fw_country))
+for (v in list(list("Richness: basin version", rich_basin), list("Richness: country version", rich_country))) {
+  r <- v[[2]]
+  log_adj(v[[1]], "Food webs", "food webs", nrow(r))
+  log_adj(v[[1]], "Food webs", "median species per food web", median(r$total))
+  log_adj(v[[1]], "Food webs", "mean species per food web", round(mean(r$total), 1))
+  for (cl in c("native", "exotic", "mixed", "unknown")) {
+    log_adj(v[[1]], "Food webs", paste(cl, "species, summed over food webs"), if (cl %in% names(r)) sum(r[[cl]]) else 0)
+  }
+}
 ```
 
 From the IsoFresh database:
@@ -420,7 +598,7 @@ oth <- read_isofresh("IsoFresh_Isotope_Other.csv") %>%
 Update other taxon names to the GBIF accepted species.
 
 ```{r}
-oth$Scientific_name <- gbif_valid(oth$Scientific_name)
+oth$Scientific_name <- gbif_valid(oth$Scientific_name, "IsoFresh other taxa")
 ```
 
 Bring in ecosystem data from the same database which includes coordinates.
@@ -456,6 +634,12 @@ Join SInAS to IsoFresh by "Scientific_name" and "location" columns.
 o_sfs <- merge(o_sf, sinas, by = c("Scientific_name","location","locationID"))
 o_sfs <- st_drop_geometry(o_sfs)
 write.csv(o_sfs,"fw_inverts.csv", row.names = FALSE, na = "")
+```
+
+Write the summary of every adjustment made above (name updates, duplicates removed, status sources, richness).
+
+```{r}
+write.csv(adjustments, "adjustments_summary.csv", row.names = FALSE, na = "")
 ```
 
 Save workspace.

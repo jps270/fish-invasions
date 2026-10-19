@@ -1,0 +1,103 @@
+"step","source","measure","value"
+"Name update (FishBase)","IsoFresh fish","unique names checked",1606
+"Name update (FishBase)","IsoFresh fish","unique names changed",33
+"Name update (FishBase)","IsoFresh fish","rows changed",156
+"Name update (FishBase)","IsoFresh fish","names kept: accepted but no FishBase species record yet",0
+"Name update (FishBase)","IsoFresh fish","names kept: not found in FishBase",134
+"Family update (FishBase)","IsoFresh fish","rows changed",201
+"Name update (FishBase)","GFID","unique names checked",1535
+"Name update (FishBase)","GFID","unique names changed",142
+"Name update (FishBase)","GFID","rows changed",233
+"Name update (FishBase)","GFID","names kept: accepted but no FishBase species record yet",1
+"Name update (FishBase)","GFID","names kept: not found in FishBase",49
+"Family update (FishBase)","GFID","rows changed",190
+"Duplicates removed after name update","GFID","rows removed",0
+"Name update (FishBase)","SInAS","unique names checked",27369
+"Name update (FishBase)","SInAS","unique names changed",110
+"Name update (FishBase)","SInAS","rows changed",548
+"Name update (FishBase)","SInAS","names kept: accepted but no FishBase species record yet",1
+"Name update (FishBase)","SInAS","names kept: not found in FishBase",25751
+"Duplicates removed after name update","SInAS","rows removed",3
+"Name update (FishBase)","GIATAR taxonCABI","unique names checked",0
+"Name update (FishBase)","GIATAR taxonCABI","unique names changed",0
+"Name update (FishBase)","GIATAR taxonCABI","rows changed",0
+"Name update (FishBase)","GIATAR taxonCABI","names kept: accepted but no FishBase species record yet",0
+"Name update (FishBase)","GIATAR taxonCABI","names kept: not found in FishBase",0
+"Name update (FishBase)","GIATAR canonicalName","unique names checked",1185
+"Name update (FishBase)","GIATAR canonicalName","unique names changed",91
+"Name update (FishBase)","GIATAR canonicalName","rows changed",91
+"Name update (FishBase)","GIATAR canonicalName","names kept: accepted but no FishBase species record yet",1
+"Name update (FishBase)","GIATAR canonicalName","names kept: not found in FishBase",3
+"Name update (FishBase)","GIATAR taxonSINAS","unique names checked",1233
+"Name update (FishBase)","GIATAR taxonSINAS","unique names changed",102
+"Name update (FishBase)","GIATAR taxonSINAS","rows changed",103
+"Name update (FishBase)","GIATAR taxonSINAS","names kept: accepted but no FishBase species record yet",1
+"Name update (FishBase)","GIATAR taxonSINAS","names kept: not found in FishBase",53
+"Name update (FishBase)","Liuyong","unique names checked",18821
+"Name update (FishBase)","Liuyong","unique names changed",500
+"Name update (FishBase)","Liuyong","rows changed",1739
+"Name update (FishBase)","Liuyong","names kept: accepted but no FishBase species record yet",772
+"Name update (FishBase)","Liuyong","names kept: not found in FishBase",685
+"Name update (FishBase)","Tedesco","unique names checked",14953
+"Name update (FishBase)","Tedesco","unique names changed",1755
+"Name update (FishBase)","Tedesco","rows changed",13280
+"Name update (FishBase)","Tedesco","names kept: accepted but no FishBase species record yet",1
+"Name update (FishBase)","Tedesco","names kept: not found in FishBase",3
+"Duplicates removed after name update","Liuyong","rows removed",488
+"Duplicates removed after name update","Tedesco","rows removed",0
+"Food web kept for IsoFresh fish not on the Liuyong basin list","IsoFresh fish","rows",1097
+"Duplicate food web x species rows merged","Combined table","rows before",240266
+"Duplicate food web x species rows merged","Combined table","rows after",203981
+"Duplicate food web x species rows merged","Combined table","MixedTedesco pairs",9
+"Native/exotic status","(blank)","rows",986
+"Native/exotic status","(blank)","species",98
+"Native/exotic status","(blank)","food webs",402
+"Native/exotic status","ExoticFishBase","rows",97
+"Native/exotic status","ExoticFishBase","species",5
+"Native/exotic status","ExoticFishBase","food webs",89
+"Native/exotic status","ExoticSinas","rows",484
+"Native/exotic status","ExoticSinas","species",57
+"Native/exotic status","ExoticSinas","food webs",295
+"Native/exotic status","MixedSinas","rows",434
+"Native/exotic status","MixedSinas","species",65
+"Native/exotic status","MixedSinas","food webs",203
+"Native/exotic status","MixedTedesco","rows",9
+"Native/exotic status","MixedTedesco","species",3
+"Native/exotic status","MixedTedesco","food webs",7
+"Native/exotic status","NativeBasin","rows",6587
+"Native/exotic status","NativeBasin","species",1170
+"Native/exotic status","NativeBasin","food webs",265
+"Native/exotic status","NativeFishBase","rows",18345
+"Native/exotic status","NativeFishBase","species",1777
+"Native/exotic status","NativeFishBase","food webs",744
+"Native/exotic status","NativeLiuyong","rows",11984
+"Native/exotic status","NativeLiuyong","species",823
+"Native/exotic status","NativeLiuyong","food webs",442
+"Native/exotic status","NativeSinas","rows",8
+"Native/exotic status","NativeSinas","species",1
+"Native/exotic status","NativeSinas","food webs",8
+"Native/exotic status","exotic","rows",426
+"Native/exotic status","exotic","species",8
+"Native/exotic status","exotic","food webs",353
+"Native/exotic status","native","rows",164621
+"Native/exotic status","native","species",8946
+"Native/exotic status","native","food webs",977
+"Native/exotic status","All labels","species with no status in any row",43
+"Richness without NativeBasin species","Combined table","rows removed",6587
+"Richness: basin version","Food webs","food webs",1001
+"Richness: basin version","Food webs","median species per food web",53
+"Richness: basin version","Food webs","mean species per food web",203.8
+"Richness: basin version","Food webs","native species, summed over food webs",201545
+"Richness: basin version","Food webs","exotic species, summed over food webs",1007
+"Richness: basin version","Food webs","mixed species, summed over food webs",443
+"Richness: basin version","Food webs","unknown species, summed over food webs",986
+"Richness: country version","Food webs","food webs",999
+"Richness: country version","Food webs","median species per food web",52
+"Richness: country version","Food webs","mean species per food web",197.6
+"Richness: country version","Food webs","native species, summed over food webs",194958
+"Richness: country version","Food webs","exotic species, summed over food webs",1007
+"Richness: country version","Food webs","mixed species, summed over food webs",443
+"Richness: country version","Food webs","unknown species, summed over food webs",986
+"Name update (GBIF)","IsoFresh other taxa","unique names checked",402
+"Name update (GBIF)","IsoFresh other taxa","unique names changed",95
+"Name update (GBIF)","IsoFresh other taxa","rows changed",199
